@@ -1,0 +1,9 @@
+[package]
+name = "yaop"
+version = "0.1.0"
+edition = "2024"
+description = "Yet Another OBJ Parser"
+license = "MIT"
+repository = "https://github.com/Bryan141816/YAOP.git"
+
+[dependencies]
