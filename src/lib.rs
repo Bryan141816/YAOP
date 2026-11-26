@@ -1,7 +1,7 @@
-mod parser;
-mod mesh;
-mod utils;
-mod bundler;
+pub mod parser;
+pub mod mesh;
+pub mod utils;
+pub mod bundler;
 use std::path::Path;
 use std::{fs::File};
 use crate::bundler::{ObjMesh, bundle};
