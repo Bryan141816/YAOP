@@ -1,17 +1,44 @@
-use std::any::type_name_of_val;
 use std::collections::HashMap;
 use std::{fs::File};
 use std::io::{BufRead, BufReader};
 
+
 type ObjCorner = (usize, usize, usize);
 type ObjFace = Vec<ObjCorner>;
+
+#[derive(Debug)]
+struct ObjGroup {
+    name: String,
+    faces: Vec<ObjFace>, 
+}
+impl ObjGroup {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            faces: Vec::new(),
+        }
+    }
+}
+#[derive(Debug)]
+struct  ObjObject {
+    pub name: String,
+    pub groups: Vec<ObjGroup>
+}
+impl ObjObject {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            groups: Vec::new()
+        }
+    }
+}
 
 #[derive(Debug)]
 struct ObjBuilder {
     pub(crate) position: Vec<[f32; 3]>,
     pub(crate) normal: Vec<[f32;3]>,
     pub(crate) text_coords: Vec<[f32;2]>,
-    pub(crate) faces: Vec<ObjFace>, 
+    pub(crate) objects: Vec<ObjObject>, 
 }
 #[derive(Debug, Clone, Copy)]
 struct Vertex {
@@ -19,7 +46,11 @@ struct Vertex {
     tex_coord: [f32; 2],
     normal: [f32; 3],
 }
-
+#[derive(Debug)]
+struct Mesh {
+    vertices: Vec<Vertex>,
+    indices: Vec<usize>
+}
 fn str_arr_to_f32(str_arr: &[&str]) -> Vec<f32> {
     let mut arr = Vec::new();
     for str in str_arr {
@@ -81,7 +112,7 @@ pub fn parse_face(
         })
         .collect()
 }
-fn build_mesh_from_obj(positions: Vec<[f32;3]>, tex_coords: Vec<[f32;2]>, normals: Vec<[f32;3]>, faces: Vec<ObjFace>) -> (Vec<Vertex>, Vec<usize>) {
+fn build_mesh_from_obj(positions: Vec<[f32;3]>, tex_coords: Vec<[f32;2]>, normals: Vec<[f32;3]>, faces: Vec<ObjFace>) -> Mesh {
     let mut vertex_map:HashMap<ObjCorner, usize> = HashMap::new();
     let mut indices = Vec::new();
     let mut vertices: Vec<Vertex> = Vec::new();
@@ -108,7 +139,7 @@ fn build_mesh_from_obj(positions: Vec<[f32;3]>, tex_coords: Vec<[f32;2]>, normal
             }
         }
     }
-    (vertices, indices)
+    Mesh { vertices, indices }
 }
 pub fn parse_obj(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let file = File::open(path).unwrap();
@@ -118,8 +149,12 @@ pub fn parse_obj(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         position: Vec::new(),
         normal: Vec::new(),
         text_coords: Vec::new(),
-        faces: Vec::new(),
+        objects: Vec::new(),
     };
+    let mut group_index: usize = 0;
+
+    let mut current_object: Option<ObjObject> = None;
+    let mut current_group: Vec<ObjGroup> = Vec::new();
 
     for (line_number, line) in reader.lines().enumerate() {
         let line = line?;
@@ -129,31 +164,33 @@ pub fn parse_obj(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         if parts.is_empty() {
             continue;
         }
-        // match parts[0] {
-        //     "v" => println!("Vertex: {:?}", &parts[1..]),
-        //     "vt" => println!("Texture coordinate: {:?}", &parts[1..]),
-        //     "vn" => println!("Normal: {:?}", &parts[1..]),
-        //     "f" => println!("Face: {:?}", &parts[1..]),
-        //     "o" => println!("Object: {:?}", &parts[1..]),
-        //     "g" => println!("Group: {:?}", &parts[1..]),
-        //     "usemtl" => println!("Material: {:?}", &parts[1..]),
-        //     "#" => println!("Comment: {:?}", &parts[1..]),
-        //     _ => println!("Unknown at line {}", line_number + 1),
-        // }
+
         match parts[0] {
             "v" => {
                 let arr = str_arr_to_f32(&parts[1..]);
-                let arr:[f32; 3] = arr.try_into().expect("Invalid array length");
+                let arr: [f32; 3] = arr.get(..3)
+                    .expect("Not enough position elements")
+                    .try_into()
+                    .expect("Invalid array length");
+
                 bulider.position.push(arr);
             },
             "vt" => {
                 let arr = str_arr_to_f32(&parts[1..]);
-                let arr:[f32; 2] = arr.try_into().expect("Invalid array length");
+                let arr: [f32; 2] = arr.get(..2)
+                    .expect("Not enough texture elements")
+                    .try_into()
+                    .expect("Invalid array length");
+
                 bulider.text_coords.push(arr);
             },
             "vn" => {
-            let arr = str_arr_to_f32(&parts[1..]);
-                let arr:[f32; 3] = arr.try_into().expect("Invalid array length");
+                let arr = str_arr_to_f32(&parts[1..]);
+                let arr: [f32; 3] = arr.get(..3)
+                    .expect("Not enough normal elements")
+                    .try_into()
+                    .expect("Invalid array length");
+
                 bulider.normal.push(arr);
             },
             "f" => {
@@ -165,7 +202,16 @@ pub fn parse_obj(path: &str) -> Result<(), Box<dyn std::error::Error>> {
 
                 match parse_face(&face, v_count, vt_count, vn_count) {
                     Ok(vertices) => {
-                        bulider.faces.push(vertices);
+                        if current_object.is_none() {
+                            current_object = Some(ObjObject::new("Default Object"));
+                        }
+                        if current_group.is_empty() {
+                            let group = ObjGroup::new("Default Group");
+                            current_group.push(group);
+                        }
+                        if let Some(mut group) = current_group.get_mut(group_index){
+                            group.faces.push(vertices);
+                        }
                     }
                     Err(err) => {
                         println!(
@@ -176,16 +222,46 @@ pub fn parse_obj(path: &str) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             },
-            // "o" => println!("Object: {:?}", &parts[1..]),
-            // "g" => println!("Group: {:?}", &parts[1..]),
+            "o" => {
+                let name = parts[1];
+                if current_object.is_none() {
+                    current_object = Some(ObjObject::new(name));
+                }
+                else {
+                    if let Some(mut object) = current_object {
+                        if !current_group.is_empty() {
+                            object.groups = std::mem::take(&mut current_group);
+                            bulider.objects.push(object);
+                            current_group = Vec::new();
+                            group_index = 0;
+                        }
+        
+                    }
+                    current_object = Some(ObjObject::new(name));
+                }
+            },
+            "g" => {
+                let name = parts[1];
+                if !current_group.is_empty() {
+                    group_index += 1;
+                }
+                let group = ObjGroup::new(name);
+                current_group.push(group);
+            },
             // "usemtl" => println!("Material: {:?}", &parts[1..]),
             // "#" => println!("Comment: {:?}", &parts[1..]),
             _ => println!("Unknown at line {}", line_number + 1),
         }
     }
-    // println!("{:#?}", bulider);
-    let (vertices, indices) = build_mesh_from_obj(bulider.position, bulider.text_coords, bulider.normal, bulider.faces);
+    if !current_object.is_none() && !current_group.is_empty() {
+        if let Some(mut object) = current_object.take(){
+            object.groups = current_group;
+            bulider.objects.push(object);
+        }
+    }
+    println!("{:#?}", bulider.objects);
+    // let mesh = build_mesh_from_obj(bulider.position, bulider.text_coords, bulider.normal, bulider.faces);
 
-    println!("{:#?}, {:#?} ", vertices, indices);
+    // println!("{:#?}", mesh);
     Ok(())
 }
