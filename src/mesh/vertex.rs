@@ -1,8 +1,8 @@
 #[derive(Debug, Clone, Copy)]
 pub struct Vertex {
-    position: [f32; 3],
-    tex_coord: [f32; 2],
-    normal: [f32; 3],
+    pub position: [f32; 3],
+    pub tex_coord: [f32; 2],
+    pub normal: [f32; 3],
 }
 impl Vertex {
     pub fn new(    
