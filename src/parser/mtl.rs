@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 
 use crate::utils::str_arr_to_f32;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MtlMaterial {
     pub name: String,
 
